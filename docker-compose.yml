@@ -1,0 +1,36 @@
+services:
+  nms1:
+    build: .
+    restart: always
+    ports:
+      - "8001:8000"
+      - "19351:1935"
+      - "8441:8443"
+    volumes:
+      - ./media:/usr/src/app/media
+      - ./www:/usr/src/app/www
+
+  nms2:
+    build: .
+    restart: always
+    ports:
+      - "8002:8000"
+      - "19352:1935"
+      - "8442:8443"
+      - "8080:8080"
+    volumes:
+      - ./media:/usr/src/app/media
+      - ./www:/usr/src/app/www
+
+  haproxy:
+    image: haproxy:2.4
+    restart: always
+    ports:
+      - "8000:8000"
+      - "1935:1935"
+      - "8443:8443"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+    depends_on:
+      - nms1
+      - nms2

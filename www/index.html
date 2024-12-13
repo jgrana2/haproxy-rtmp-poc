@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Node Media Server Video</title>
+    <!-- Add the HLS.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        /* Basic reset */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+
+        #mainContainer {
+            display: flex;
+            /* Use flexbox to arrange children in a row */
+            align-items: stretch;
+            /* Make children stretch to fill the container */
+            width: 80%;
+            /* Set width of main container */
+            max-width: 1200px;
+            /* Optional: limit max width */
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            /* Prevent content overflow */
+        }
+
+        video {
+            width: 100%;
+            /* Set video width to be dynamic */
+            height: auto;
+            /* Maintain aspect ratio */
+            border-radius: 8px 8px 0 0;
+            /* Rounded corners for the top side */
+        }
+
+        #playButton {
+            width: 100%;
+            /* Full width of the container */
+            padding: 15px;
+            /* Padding for better touch area */
+            border: none;
+            /* Remove default button styling */
+            background-color: #007BFF;
+            /* Bootstrap primary color */
+            color: white;
+            /* Text color */
+            font-size: 16px;
+            /* Font size */
+            text-align: center;
+            /* Center align text */
+            cursor: pointer;
+            /* Pointer cursor on hover */
+            border-radius: 0 0 8px 8px;
+            /* Rounded corners for the bottom side */
+            transition: background-color 0.3s;
+            /* Smooth transition for hover effect */
+        }
+
+        #playButton:hover {
+            background-color: #0056b3;
+            /* Darker blue on hover */
+        }
+
+        #transcriptions {
+            width: 100%;
+            /* Set transcription panel width */
+            overflow-y: auto;
+            /* Allow scrolling if content overflows */
+            padding: 20px;
+            /* Add padding */
+            box-sizing: border-box;
+            /* Include padding in width calculation */
+            border-top: 1px solid #ddd;
+            /* Divider line between button and transcriptions */
+        }
+
+        a {
+            text-decoration: none;
+            color: #007BFF;
+        }
+
+        a:hover {
+            color: #0056b3;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="mainContainer">
+        <div>
+            <video id="videoElement" controls></video>
+            <button id="playButton">Play Video</button>
+        </div>
+        <div id="transcriptions"> <!-- To display transcriptions -->
+            <h3>Transcriptions:</h3> <!-- Header for transcriptions -->
+        </div>
+    </div>
+    <script>
+        // WebSocket connection
+        const socket = new WebSocket('ws://localhost:8080');
+        let streamStartTime;
+
+        socket.onopen = function () {
+            console.log('WebSocket connection established');
+        };
+
+        socket.onmessage = function (event) {
+            // Assuming event.data is sent as JSON
+            const data = JSON.parse(event.data)[0];
+            displayTranscription(data, streamStartTime);
+        };
+
+        socket.onerror = function (error) {
+            console.error('WebSocket Error:', error);
+        };
+
+        socket.onclose = function () {
+            console.log('WebSocket connection closed');
+        };
+
+        // Display transcription
+        function displayTranscription(data, streamStartTime) {
+            const transcriptionDiv = document.getElementById('transcriptions');
+            const transcriptionElement = document.createElement('a');
+            transcriptionElement.innerHTML = `${data.start} - ${data.end}: ${data.text}`;
+            const startTime = convertTimeToSeconds(data.start);
+            console.log(startTime);
+            
+            const streamStartSeconds = convertTimeToSeconds(streamStartTime);
+            console.log(streamStartSeconds);
+            
+            const relativeTime = startTime - streamStartSeconds;
+            console.log(relativeTime);
+            
+            transcriptionElement.onclick = function() {
+                const videoElement = document.getElementById('videoElement');
+                if (!isNaN(relativeTime) && isFinite(relativeTime) && relativeTime >= 0) { // Check if relativeTime is a valid number
+                    videoElement.currentTime = relativeTime;
+                } else {
+                    console.error('Invalid start time:', data.start);
+                }
+            };
+            transcriptionDiv.appendChild(transcriptionElement);
+            transcriptionDiv.appendChild(document.createElement('br')); // Add a line break
+        }
+
+        // Function to convert time to seconds
+        function convertTimeToSeconds(time) {
+            const parts = time.split(':');
+            const hours = parseInt(parts[0]);
+            const minutes = parseInt(parts[1]);
+            const secondsAndMilliseconds = parts[2].split(',');
+            const seconds = parseInt(secondsAndMilliseconds[0]);
+            const milliseconds = parseInt(secondsAndMilliseconds[1]);
+
+            return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000;
+        }
+
+        // Video playback setup with HLS.js
+        if (Hls.isSupported()) {
+            var videoElement = document.getElementById('videoElement');
+            var hls = new Hls();
+            hls.loadSource('http://localhost:8000/live/stream/index.m3u8');
+            hls.attachMedia(videoElement);
+
+            // Listen for the MANIFEST_PARSED event
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                console.log("Manifest parsed, ready to play.");
+                const currentTime = new Date();
+                const hours = currentTime.getHours();
+                const minutes = currentTime.getMinutes();
+                const seconds = currentTime.getSeconds();
+                const milliseconds = currentTime.getMilliseconds();
+                streamStartTime = `${padZero(hours)}:${padZero(minutes)}:${padZero(seconds)},${padZero(milliseconds, 3)}`;
+                console.log(streamStartTime);
+            });
+
+            // Function to pad a number with zeros
+            function padZero(number, length = 2) {
+                return number.toString().padStart(length, '0');
+            }
+
+            // Play video on button click
+            document.getElementById('playButton').addEventListener('click', function () {
+                videoElement.play().catch(function (error) {
+                    console.error("Error attempting to play:", error);
+                });
+            });
+        }
+    </script>
+</body>
+
+</html>
