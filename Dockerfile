@@ -18,8 +18,8 @@ ADD https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-i686-static.tar.xz 
 RUN tar -xvf ffmpeg-release-i686-static.tar.xz
 RUN mv /usr/src/app/ffmpeg-*/ffmpeg /usr/src/app/ffmpeg.exe
 
-# Expose ports for RTMP and HTTP
-EXPOSE 1935 8000
+# Expose ports for RTMP, HTTP and WS
+EXPOSE 1935 8000 8080
 
 # Start the Node Media Server
 CMD [ "node", "app.js" ]

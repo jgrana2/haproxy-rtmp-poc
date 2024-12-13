@@ -67,37 +67,88 @@ nms.on('preConnect', (id, args) => {
   console.log('[NodeEvent on preConnect]', `id=${id} args=${JSON.stringify(args)}`);
 });
 
-nms.on('postPublish', (id, StreamPath, args) => {
-  console.log('[NodeEvent on postPublish]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
-
-  const audioChunks = []; // Collect audio chunks
-  const chunkDuration = 10000; // Duration to collect chunks in milliseconds (5 seconds)
-  
-  const ffmpeg = spawn(config.trans.ffmpeg, [
-    '-i', `rtmp://127.0.0.1${StreamPath}`,
-    '-f', 's16le',
-    '-ar', '16000', // Set to 16000 Hz
-    '-ac', '1', // Mono channel
-    'pipe:1' // Output audio to stdout
-  ]);
-
-  const chunkTimer = setInterval(async () => {
-    if (audioChunks.length > 0) {
-      const startTime = Date.now();
-      const audioBuffer = Buffer.concat(audioChunks); // Concatenate collected chunks
-      await sendAudioToSTT(audioBuffer, startTime); // Pass startTime to STT service
-      audioChunks.length = 0; // Clear the chunks for the next collection
+class CircularBuffer {
+    constructor(size) {
+        this.buffer = Buffer.alloc(size);
+        this.size = size;
+        this.writeIndex = 0;
+        this.readIndex = 0;
+        this.isFull = false;
     }
-  }, chunkDuration);
 
-  ffmpeg.stdout.on('data', (chunk) => {
-    audioChunks.push(chunk); // Collect audio chunks
-  });
+    write(data) {
+        const dataSize = data.length;
+        for (let i = 0; i < dataSize; i++) {
+            this.buffer[this.writeIndex] = data[i];
+            this.writeIndex = (this.writeIndex + 1) % this.size;
+            if (this.writeIndex === this.readIndex) {
+                this.isFull = true; // Buffer is full
+            }
+        }
+    }
 
-  ffmpeg.on('exit', (code) => {
-    console.log(`FFmpeg exited with code ${code}`);
-    clearInterval(chunkTimer); // Stop listening for new chunks
-  });
+    read(size) {
+        if (!this.isFull && this.writeIndex === this.readIndex) {
+            return null; // No data to read
+        }
+
+        const output = [];
+        for (let i = 0; i < size; i++) {
+            output.push(this.buffer[this.readIndex]);
+            this.readIndex = (this.readIndex + 1) % this.size;
+            if (this.readIndex === this.writeIndex) {
+                this.isFull = false; // Reset full status if we've wrapped around
+                break;
+            }
+        }
+        return Buffer.from(output);
+    }
+}
+
+// Limit for the buffer, adjust as necessary (16000 Hz * 15 seconds)
+const circularBufferSize = 16000 * 15 * 2; // Buffer size for 15 seconds of audio (16-bit)
+
+nms.on('postPublish', (id, StreamPath, args) => {
+    console.log('[NodeEvent on postPublish]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
+
+    const audioBuffer = new CircularBuffer(circularBufferSize); // Create a circular buffer
+    const chunkDuration = 10000; // Duration to collect chunks in milliseconds (10 seconds)
+
+    const ffmpeg = spawn(config.trans.ffmpeg, [
+        '-i', `rtmp://127.0.0.1${StreamPath}`,
+        '-f', 's16le',
+        '-ar', '16000', // Set to 16000 Hz
+        '-ac', '1', // Mono channel
+        'pipe:1' // Output audio to stdout
+    ]);
+
+    // Function to handle STT requests
+    const handleSTTRequest = async (audioData, startTime) => {
+        try {
+            // Call your STT service here with audioData
+            await sendAudioToSTT(audioData, startTime); // Pass startTime to STT service
+        } catch (error) {
+            console.error('Error sending audio to STT service:', error);
+        }
+    };
+
+    // Chunk processing loop
+    const chunkTimer = setInterval(() => {
+        const audioData = audioBuffer.read(16000 * 10 * 2); // Read 10 seconds worth of audio data
+        if (audioData && audioData.length > 0) {
+            const startTime = Date.now();
+            handleSTTRequest(audioData, startTime); // Process STT request in parallel
+        }
+    }, chunkDuration);
+
+    ffmpeg.stdout.on('data', (chunk) => {
+        audioBuffer.write(chunk); // Write audio chunks into the circular buffer
+    });
+
+    ffmpeg.on('exit', (code) => {
+        console.log(`FFmpeg exited with code ${code}`);
+        clearInterval(chunkTimer); // Stop listening for new chunks
+    });
 });
 
 // Function to send audio buffer to STT service

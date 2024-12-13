@@ -136,17 +136,13 @@
             const transcriptionElement = document.createElement('a');
             transcriptionElement.innerHTML = `${data.start} - ${data.end}: ${data.text}`;
             const startTime = convertTimeToSeconds(data.start);
-            console.log(startTime);
-            
             const streamStartSeconds = convertTimeToSeconds(streamStartTime);
-            console.log(streamStartSeconds);
-            
             const relativeTime = startTime - streamStartSeconds;
-            console.log(relativeTime);
-            
-            transcriptionElement.onclick = function() {
+
+            transcriptionElement.onclick = function () {
                 const videoElement = document.getElementById('videoElement');
                 if (!isNaN(relativeTime) && isFinite(relativeTime) && relativeTime >= 0) { // Check if relativeTime is a valid number
+                    console.log(relativeTime);
                     videoElement.currentTime = relativeTime;
                 } else {
                     console.error('Invalid start time:', data.start);
@@ -172,11 +168,9 @@
         if (Hls.isSupported()) {
             var videoElement = document.getElementById('videoElement');
             var hls = new Hls();
-            hls.loadSource('http://localhost:8000/live/stream/index.m3u8');
-            hls.attachMedia(videoElement);
 
             // Listen for the MANIFEST_PARSED event
-            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+            hls.on(Hls.Events.MANIFEST_PARSED, function () {
                 console.log("Manifest parsed, ready to play.");
                 const currentTime = new Date();
                 const hours = currentTime.getHours();
@@ -184,13 +178,11 @@
                 const seconds = currentTime.getSeconds();
                 const milliseconds = currentTime.getMilliseconds();
                 streamStartTime = `${padZero(hours)}:${padZero(minutes)}:${padZero(seconds)},${padZero(milliseconds, 3)}`;
-                console.log(streamStartTime);
+                console.log("Start time: ", streamStartTime);
             });
 
-            // Function to pad a number with zeros
-            function padZero(number, length = 2) {
-                return number.toString().padStart(length, '0');
-            }
+            hls.loadSource('http://localhost:8000/live/stream/index.m3u8');
+            hls.attachMedia(videoElement);
 
             // Play video on button click
             document.getElementById('playButton').addEventListener('click', function () {
@@ -198,6 +190,11 @@
                     console.error("Error attempting to play:", error);
                 });
             });
+        }
+
+        // Function to pad a number with zeros
+        function padZero(number, length = 2) {
+            return number.toString().padStart(length, '0');
         }
     </script>
 </body>
