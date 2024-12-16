@@ -39,7 +39,6 @@ const config = {
 };
 
 var nms = new NodeMediaServer(config);
-console.log("Jose's Node Media Server");
 nms.run();
 
 // Set up WebSocket server
@@ -68,87 +67,87 @@ nms.on('preConnect', (id, args) => {
 });
 
 class CircularBuffer {
-    constructor(size) {
-        this.buffer = Buffer.alloc(size);
-        this.size = size;
-        this.writeIndex = 0;
-        this.readIndex = 0;
-        this.isFull = false;
+  constructor(size) {
+    this.buffer = Buffer.alloc(size);
+    this.size = size;
+    this.writeIndex = 0;
+    this.readIndex = 0;
+    this.isFull = false;
+  }
+
+  write(data) {
+    const dataSize = data.length;
+    for (let i = 0; i < dataSize; i++) {
+      this.buffer[this.writeIndex] = data[i];
+      this.writeIndex = (this.writeIndex + 1) % this.size;
+      if (this.writeIndex === this.readIndex) {
+        this.isFull = true; // Buffer is full
+      }
+    }
+  }
+
+  read(size) {
+    if (!this.isFull && this.writeIndex === this.readIndex) {
+      return null; // No data to read
     }
 
-    write(data) {
-        const dataSize = data.length;
-        for (let i = 0; i < dataSize; i++) {
-            this.buffer[this.writeIndex] = data[i];
-            this.writeIndex = (this.writeIndex + 1) % this.size;
-            if (this.writeIndex === this.readIndex) {
-                this.isFull = true; // Buffer is full
-            }
-        }
+    const output = [];
+    for (let i = 0; i < size; i++) {
+      output.push(this.buffer[this.readIndex]);
+      this.readIndex = (this.readIndex + 1) % this.size;
+      if (this.readIndex === this.writeIndex) {
+        this.isFull = false; // Reset full status if we've wrapped around
+        break;
+      }
     }
-
-    read(size) {
-        if (!this.isFull && this.writeIndex === this.readIndex) {
-            return null; // No data to read
-        }
-
-        const output = [];
-        for (let i = 0; i < size; i++) {
-            output.push(this.buffer[this.readIndex]);
-            this.readIndex = (this.readIndex + 1) % this.size;
-            if (this.readIndex === this.writeIndex) {
-                this.isFull = false; // Reset full status if we've wrapped around
-                break;
-            }
-        }
-        return Buffer.from(output);
-    }
+    return Buffer.from(output);
+  }
 }
 
 // Limit for the buffer, adjust as necessary (16000 Hz * 15 seconds)
 const circularBufferSize = 16000 * 15 * 2; // Buffer size for 15 seconds of audio (16-bit)
 
 nms.on('postPublish', (id, StreamPath, args) => {
-    console.log('[NodeEvent on postPublish]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
+  console.log('[NodeEvent on postPublish]', `id=${id} StreamPath=${StreamPath} args=${JSON.stringify(args)}`);
 
-    const audioBuffer = new CircularBuffer(circularBufferSize); // Create a circular buffer
-    const chunkDuration = 10000; // Duration to collect chunks in milliseconds (10 seconds)
+  const audioBuffer = new CircularBuffer(circularBufferSize); // Create a circular buffer
+  const chunkDuration = 10000; // Duration to collect chunks in milliseconds (10 seconds)
 
-    const ffmpeg = spawn(config.trans.ffmpeg, [
-        '-i', `rtmp://127.0.0.1${StreamPath}`,
-        '-f', 's16le',
-        '-ar', '16000', // Set to 16000 Hz
-        '-ac', '1', // Mono channel
-        'pipe:1' // Output audio to stdout
-    ]);
+  const ffmpeg = spawn(config.trans.ffmpeg, [
+    '-i', `rtmp://127.0.0.1${StreamPath}`,
+    '-f', 's16le',
+    '-ar', '16000', // Set to 16000 Hz
+    '-ac', '1', // Mono channel
+    'pipe:1' // Output audio to stdout
+  ]);
 
-    // Function to handle STT requests
-    const handleSTTRequest = async (audioData, startTime) => {
-        try {
-            // Call your STT service here with audioData
-            await sendAudioToSTT(audioData, startTime); // Pass startTime to STT service
-        } catch (error) {
-            console.error('Error sending audio to STT service:', error);
-        }
-    };
+  // Function to handle STT requests
+  const handleSTTRequest = async (audioData, startTime) => {
+    try {
+      // Call your STT service here with audioData
+      await sendAudioToSTT(audioData, startTime); // Pass startTime to STT service
+    } catch (error) {
+      console.error('Error sending audio to STT service:', error);
+    }
+  };
 
-    // Chunk processing loop
-    const chunkTimer = setInterval(() => {
-        const audioData = audioBuffer.read(16000 * 10 * 2); // Read 10 seconds worth of audio data
-        if (audioData && audioData.length > 0) {
-            const startTime = Date.now();
-            handleSTTRequest(audioData, startTime); // Process STT request in parallel
-        }
-    }, chunkDuration);
+  // Chunk processing loop
+  const chunkTimer = setInterval(() => {
+    const audioData = audioBuffer.read(16000 * 10 * 2); // Read 10 seconds worth of audio data
+    if (audioData && audioData.length > 0) {
+      const startTime = Date.now();
+      handleSTTRequest(audioData, startTime); // Process STT request in parallel
+    }
+  }, chunkDuration);
 
-    ffmpeg.stdout.on('data', (chunk) => {
-        audioBuffer.write(chunk); // Write audio chunks into the circular buffer
-    });
+  ffmpeg.stdout.on('data', (chunk) => {
+    audioBuffer.write(chunk); // Write audio chunks into the circular buffer
+  });
 
-    ffmpeg.on('exit', (code) => {
-        console.log(`FFmpeg exited with code ${code}`);
-        clearInterval(chunkTimer); // Stop listening for new chunks
-    });
+  ffmpeg.on('exit', (code) => {
+    console.log(`FFmpeg exited with code ${code}`);
+    clearInterval(chunkTimer); // Stop listening for new chunks
+  });
 });
 
 // Function to send audio buffer to STT service
@@ -163,14 +162,18 @@ async function sendAudioToSTT(audioBuffer, startTime) {
 
     const writeStream = fs.createWriteStream(audioFilePath);
     wavFile.pipe(writeStream);
-    
+
     wavFile.write(audioBuffer);
     wavFile.end();
 
-    await new Promise((resolve, reject) => {
-      writeStream.on('finish', resolve);
-      writeStream.on('error', reject);
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+      });
+    } catch (error) {
+      console.log("Promise error: ", error);
+    }
 
     // Use OpenAI's transcription API
     const transcription = await openai.audio.transcriptions.create({
@@ -181,7 +184,7 @@ async function sendAudioToSTT(audioBuffer, startTime) {
     const utcMinusFiveHours = -5 * 60; // Offset in minutes
     const duration = audioBuffer.length / (16000 * 2); // Duration in seconds (16-bit, mono)
     const endTime = startTime + duration * 1000; // Convert to milliseconds
-    
+
     // Convert time to Date object for formatting
     const startTimeDate = new Date(startTime);
     const endTimeDate = new Date(endTime);
