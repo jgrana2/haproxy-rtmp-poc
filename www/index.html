@@ -108,8 +108,12 @@
         </div>
     </div>
     <script>
+        // Extract the streamId from the URL (e.g. ?streamId=stream)
+        const urlParams = new URLSearchParams(window.location.search);
+        const streamId = urlParams.get('streamId') || 'stream';; // fallback if none is provided
+
         // WebSocket connection
-        const socket = new WebSocket('ws://node-media-nlb-bd17a5556829bc13.elb.us-east-1.amazonaws.com:8080');
+        const socket = new WebSocket(`ws://localhost:8080/${streamId}`);
         let streamStartTime;
 
         socket.onopen = function () {
@@ -181,7 +185,7 @@
                 console.log("Start time: ", streamStartTime);
             });
 
-            hls.loadSource('http://node-media-nlb-bd17a5556829bc13.elb.us-east-1.amazonaws.com:8000/live/stream/index.m3u8');
+            hls.loadSource(`http://localhost:8000/live/${streamId}/index.m3u8`);
             hls.attachMedia(videoElement);
 
             // Play video on button click
